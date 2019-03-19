@@ -57,6 +57,12 @@ public class RequestHandler implements Runnable {
 	 */
 	private Map<String, String> headers = new HashMap<>();
 
+	
+	/**
+	 * Payload for POST request
+	 */
+	StringBuilder payload = new StringBuilder();
+	
 	/**
 	 * Creates a ReuqestHandler object capable of servicing HTTP(S) GET requests
 	 * @param clientSocket socket connected to the client
@@ -87,21 +93,18 @@ public class RequestHandler implements Runnable {
 		try{
 			requestString = proxyToClientBr.readLine();
 			
+			// Read headers
 			// Host: 127.0.0.1:8580
 			// User-Agent: Java/1.8.0_191
-
-			String output = "";
-			while (output != null) {
-				output = proxyToClientBr.readLine();
+			String output = null;
+			while((output = proxyToClientBr.readLine()).length() != 0){
+				//output = proxyToClientBr.readLine();
 				if (output.contains(":")) {
 					logger.debug("Header: " + output);
 					int indexOf = output.indexOf(":");
 					String key = output.substring(0, indexOf);
 					String value = output.substring(indexOf + 1, output.length());
 					headers.put(key, value);
-				}
-				if ("".equals(output)) { // nothing to read
-					output = null;
 				}
 			}
 
@@ -111,11 +114,22 @@ public class RequestHandler implements Runnable {
 		}
 
 		// Parse out URL
-
+		
 		logger.debug("Request Received " + requestString);
 		// Get the Request type
-		String request = requestString.substring(0,requestString.indexOf(' '));
+		String requestType = requestString.substring(0,requestString.indexOf(' '));
 
+		// Read payload
+		try {
+			while(proxyToClientBr.ready()){
+				payload.append((char) proxyToClientBr.read());
+			}
+			logger.debug("Payload data is: " + payload.toString());
+		} catch (IOException e) {
+			logger.error("Unable to read payload of request: " + requestString, e);
+		}
+		
+        
 		// remove request type and space
 		String urlString = requestString.substring(requestString.indexOf(' ')+1);
 
@@ -129,22 +143,23 @@ public class RequestHandler implements Runnable {
 		}
 
 		// Check request type HTTPS
-		if(request.equals("CONNECT")){
+		if(requestType.equals("CONNECT")){
 			logger.debug("HTTPS Request for : " + urlString);
 			handleHTTPSRequest(urlString);
 		
 		} else { // HTTP
-			logger.debug("HTTP GET for : " + urlString);
-			sendNonCachedToClient(urlString);
+			logger.debug("HTTP " + requestType + " for : " + urlString);
+			sendNonCachedToClient(urlString, requestType);
 		}
 	} 
 
 
 	/**
 	 * Sends the contents of the file specified by the urlString to the client
-	 * @param urlString URL ofthe file requested
+	 * @param urlString URL of the file requested
+	 * @param method GET/POST
 	 */
-	private void sendNonCachedToClient(String urlString){
+	private void sendNonCachedToClient(String urlString, String method){
 
 		BufferedReader proxyToServerBR = null;
 		
@@ -153,19 +168,21 @@ public class RequestHandler implements Runnable {
 				URL remoteURL = new URL(urlString);
 				// Create a connection to remote server
 				HttpURLConnection proxyToServerCon = (HttpURLConnection)remoteURL.openConnection();
-//				proxyToServerCon.setRequestProperty("Content-Type", 
-//						"application/x-www-form-urlencoded");
-//				proxyToServerCon.setRequestProperty("Content-Type", "application/json");
-//				proxyToServerCon.setRequestProperty("Content-Language", "en-US");
-
-				// Follow headers
+				proxyToServerCon.setRequestMethod(method);
+				
+				// Add headers
 				for (Entry<String, String> header : this.headers.entrySet()) {
 					proxyToServerCon.setRequestProperty(header.getKey(), header.getValue());
 				}
-				
+
 				proxyToServerCon.setUseCaches(false);
 				proxyToServerCon.setDoOutput(true);
-			
+
+				// Add payload
+				if ("POST".equals(method)) {
+					proxyToServerCon.getOutputStream().write(payload.toString().getBytes("UTF-8"));
+				}
+				
 				// Create Buffered Reader from remote Server
 				proxyToServerBR = new BufferedReader(new InputStreamReader(proxyToServerCon.getInputStream()));
 				

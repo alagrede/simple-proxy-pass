@@ -2,6 +2,7 @@ package fr.tony;
 
 import static org.junit.Assert.assertEquals;
 import static spark.Spark.get;
+import static spark.Spark.post;
 import static spark.Spark.stop;
 
 import org.apache.http.HttpHost;
@@ -31,8 +32,19 @@ public class ProxyTest {
 		
 		// Start a Web resource
 		get("/hello", (req, res) -> {
-			System.out.println(req.headers());
+			//System.out.println(req.headers());
+			if (!"my-value".equals(req.headers("My-Param"))) {
+				throw new Exception();
+			}
 			return "Hello World";
+		});
+		
+		post("/say", (req, res) -> {
+			//System.out.println("BODY received: " + req.body());
+			if (!"val1".equals(req.queryParams("field1"))) {
+				throw new Exception();
+			}
+			return "ok";
 		});
 		
 		// Use proxy for all unirest requests
@@ -52,9 +64,22 @@ public class ProxyTest {
 		
 		HttpResponse<String> response = Unirest.get("http://localhost:4567/hello")
 		.header("Content-Type", "application/json")
+		.header("My-Param", "my-value")
 		.asString();
 		
 		assertEquals("Hello World", response.getBody());
+	}
+
+	@Test
+	public void post_request() throws UnirestException {
+		
+		HttpResponse<String> response = Unirest.post("http://localhost:4567/say")
+				.header("Content-Type", "application/x-www-form-urlencoded")
+				.field("field1", "val1")
+				.field("field2", "val2")
+				.asString();
+		
+		assertEquals("ok", response.getBody());
 	}
 	
 }
